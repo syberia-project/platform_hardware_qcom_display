@@ -12,7 +12,6 @@ LOCAL_SHARED_LIBRARIES        := $(common_libs)
 
 LOCAL_CFLAGS                  := $(common_flags) -DLOG_TAG=\"qdhdmi_cec\" -Wno-sign-conversion
 LOCAL_CLANG                   := true
-LOCAL_ADDITIONAL_DEPENDENCIES := $(common_deps)
 LOCAL_SRC_FILES               := qhdmi_cec.cpp
 
 include $(BUILD_SHARED_LIBRARY)
