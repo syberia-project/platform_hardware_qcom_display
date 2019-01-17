@@ -215,6 +215,15 @@ class HWCDisplay : public DisplayEventHandler {
     validated_ = false;
     return HWC2::Error::None;
   }
+  virtual DisplayError SetDynamicDSIClock(uint64_t bitclk) {
+    return kErrorNotSupported;
+  }
+  virtual DisplayError GetDynamicDSIClock(uint64_t *bitclk) {
+    return kErrorNotSupported;
+  }
+  virtual DisplayError GetSupportedDSIClock(std::vector<uint64_t> *bitclk) {
+    return kErrorNotSupported;
+  }
 
  protected:
   // Maximum number of layers supported by display manager.
@@ -286,6 +295,7 @@ class HWCDisplay : public DisplayEventHandler {
   bool shutdown_pending_ = false;
   bool use_blit_comp_ = false;
   bool secure_display_active_ = false;
+  bool secure_display_transition_ = false;
   bool skip_prepare_ = false;
   bool solid_fill_enable_ = false;
   Layer *solid_fill_layer_ = NULL;

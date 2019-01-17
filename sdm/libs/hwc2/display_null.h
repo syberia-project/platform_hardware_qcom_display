@@ -1,5 +1,5 @@
 /*
-* Copyright (c) 2017, The Linux Foundation. All rights reserved.
+* Copyright (c) 2017 - 2018, The Linux Foundation. All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
 * modification, are permitted provided that the following conditions are
@@ -60,7 +60,7 @@ class DisplayNull : public DisplayInterface {
   }
 
   MAKE_NO_OP(Prepare(LayerStack *))
-  MAKE_NO_OP(Flush())
+  MAKE_NO_OP(Flush(bool secure))
   MAKE_NO_OP(GetNumVariableInfoConfigs(uint32_t *))
   MAKE_NO_OP(GetConfig(uint32_t, DisplayConfigVariableInfo *))
   MAKE_NO_OP(GetConfig(DisplayConfigFixedInfo *))
@@ -98,6 +98,9 @@ class DisplayNull : public DisplayInterface {
   MAKE_NO_OP(GetClientTargetSupport(uint32_t, uint32_t, LayerBufferFormat,
                                     const ColorMetaData &))
   std::string Dump() { return ""; }
+  MAKE_NO_OP(SetDynamicDSIClock(uint64_t bitclk))
+  MAKE_NO_OP(GetDynamicDSIClock(uint64_t *bitclk))
+  MAKE_NO_OP(GetSupportedDSIClock(std::vector<uint64_t> *bitclk_rates))
 
  private:
   bool active_ = false;
