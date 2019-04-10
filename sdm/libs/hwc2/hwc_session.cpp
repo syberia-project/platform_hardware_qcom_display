@@ -214,6 +214,7 @@ int HWCSession::Init() {
     return status;
   }
 
+  is_composer_up_ = true;
   return 0;
 }
 
@@ -1094,12 +1095,20 @@ android::status_t HWCSession::notifyCallback(uint32_t command, const android::Pa
       status = GetSupportedDsiClk(input_parcel, output_parcel);
       break;
 
+    case qService::IQService::GET_COMPOSER_STATUS:
+      output_parcel->writeInt32(getComposerStatus());
+      break;
+
     default:
       DLOGW("QService command = %d is not supported", command);
       return -EINVAL;
   }
 
   return status;
+}
+
+android::status_t HWCSession::getComposerStatus() {
+  return is_composer_up_;
 }
 
 android::status_t HWCSession::HandleGetDisplayAttributesForConfig(const android::Parcel
@@ -1231,7 +1240,7 @@ void HWCSession::SetFrameDumpConfig(const android::Parcel *input_parcel) {
 android::status_t HWCSession::SetDsiClk(const android::Parcel *input_parcel) {
   int disp_id = input_parcel->readInt32();
   uint64_t clk = UINT32(input_parcel->readInt64());
-  if (disp_id < 0 || !hwc_display_[disp_id]) {
+  if (disp_id != HWC_DISPLAY_PRIMARY || !hwc_display_[disp_id]) {
     return -EINVAL;
   }
 
@@ -1241,7 +1250,7 @@ android::status_t HWCSession::SetDsiClk(const android::Parcel *input_parcel) {
 android::status_t HWCSession::GetDsiClk(const android::Parcel *input_parcel,
                                         android::Parcel *output_parcel) {
   int disp_id = input_parcel->readInt32();
-  if (disp_id < 0 || !hwc_display_[disp_id]) {
+  if (disp_id != HWC_DISPLAY_PRIMARY || !hwc_display_[disp_id]) {
     return -EINVAL;
   }
 
@@ -1254,7 +1263,7 @@ android::status_t HWCSession::GetDsiClk(const android::Parcel *input_parcel,
 android::status_t HWCSession::GetSupportedDsiClk(const android::Parcel *input_parcel,
                                                  android::Parcel *output_parcel) {
   int disp_id = input_parcel->readInt32();
-  if (disp_id < 0 || !hwc_display_[disp_id]) {
+  if (disp_id != HWC_DISPLAY_PRIMARY || !hwc_display_[disp_id]) {
     return -EINVAL;
   }
 
