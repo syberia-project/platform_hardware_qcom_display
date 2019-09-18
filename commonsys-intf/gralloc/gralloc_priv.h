@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2018, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2019, The Linux Foundation. All rights reserved.
  * Not a Contribution
  *
  * Copyright (C) 2008 The Android Open Source Project
@@ -28,6 +28,7 @@
 #define GRALLOC_PROP(prop_name) GRALLOC_PROP_PREFIX prop_name
 
 #define DISABLE_UBWC_PROP                    GRALLOC_PROP("disable_ubwc")
+#define DISABLE_AHARDWAREBUFFER_PROP         GRALLOC_PROP("disable_ahardware_buffer")
 #define ENABLE_FB_UBWC_PROP                  GRALLOC_PROP("enable_fb_ubwc")
 #define MAP_FB_MEMORY_PROP                   GRALLOC_PROP("map_fb_memory")
 #define USE_SYSTEM_HEAP_FOR_SENSORS          GRALLOC_PROP("use_system_heap_for_sensors")
@@ -49,11 +50,19 @@ inline int roundUpToPageSize(int x) {
  * cannot be used with noncontiguous heaps */
 #define GRALLOC_USAGE_PRIVATE_UNCACHED (UINT32_C(1) << 29)
 
-/* This flag is used to indicate P010 format */
+/* This flag is used to indicate 10 bit format.
+ * When both GRALLOC_USAGE_PRIVATE_ALLOC_UBWC & GRALLOC_USAGE_PRIVATE_10BIT
+ * are set then it will indicate UBWC_TP10 format.
+ * When only GRALLOC_USAGE_PRIVATE_10BIT is set it will indicate linear P010 format.
+ */
 #define GRALLOC_USAGE_PRIVATE_10BIT (UINT32_C(1) << 30)
 
 /* This flag is used for SECURE display usecase */
 #define GRALLOC_USAGE_PRIVATE_SECURE_DISPLAY (UINT32_C(1) << 31)
+
+/* This flag is used to indicate video NV21 format */
+#define GRALLOC_USAGE_PRIVATE_VIDEO_NV21_ENCODER 1ULL << 48
+
 /* unused legacy flags */
 #define GRALLOC_USAGE_PRIVATE_MM_HEAP 0
 #define GRALLOC_USAGE_PRIVATE_IOMMU_HEAP 0
@@ -63,8 +72,19 @@ inline int roundUpToPageSize(int x) {
 /* This flag is set for WFD usecase */
 #define GRALLOC_USAGE_PRIVATE_WFD (UINT32_C(1) << 21)
 
-/* This flag is used to indicate 10-bit tight pack format (e.g. TP10) */
-#define GRALLOC_USAGE_PRIVATE_10BIT_TP (UINT32_C(1) << 27)
+/* TODO(user): move these to use sanctioned vendor bits
+ * once end to end 64-bit support is available */
+/* This flag is set for HEIF usecase */
+#define GRALLOC_USAGE_PRIVATE_HEIF (UINT32_C(1) << 27)
+
+/* TODO(user): Remove when clients stop referencing this flag */
+#define GRALLOC_USAGE_PRIVATE_10BIT_TP 0
+
+/* This flag indicates PI format is being used */
+#define GRALLOC_USAGE_PRIVATE_ALLOC_UBWC_PI 1ULL << 49
+
+/* This flag is set while CDSP accesses the buffer */
+#define GRALLOC_USAGE_PRIVATE_CDSP 1ULL << 50
 
 /* Legacy gralloc1 definitions */
 /* Some clients may still be using the old flags */
@@ -76,9 +96,7 @@ inline int roundUpToPageSize(int x) {
 #define GRALLOC1_PRODUCER_USAGE_PRIVATE_10BIT GRALLOC_USAGE_PRIVATE_10BIT
 #define GRALLOC1_PRODUCER_USAGE_PRIVATE_10BIT_TP GRALLOC_USAGE_PRIVATE_10BIT_TP
 #define GRALLOC1_CONSUMER_USAGE_PRIVATE_10BIT_TP GRALLOC_USAGE_PRIVATE_10BIT_TP
-
-/* This flag is used to indicate video NV21 format */
-#define GRALLOC1_PRODUCER_USAGE_PRIVATE_VIDEO_NV21_ENCODER (1ULL << 48)
+#define GRALLOC1_PRODUCER_USAGE_PRIVATE_VIDEO_NV21_ENCODER GRALLOC_USAGE_PRIVATE_VIDEO_NV21_ENCODER
 
 // for PERFORM API :
 #define GRALLOC_MODULE_PERFORM_CREATE_HANDLE_FROM_BUFFER 1
@@ -96,6 +114,7 @@ inline int roundUpToPageSize(int x) {
 #define GRALLOC_MODULE_PERFORM_SET_SINGLE_BUFFER_MODE 13
 #define GRALLOC1_MODULE_PERFORM_GET_BUFFER_SIZE_AND_DIMENSIONS 14
 #define GRALLOC1_MODULE_PERFORM_GET_INTERLACE_FLAG 15
+#define GRALLOC_MODULE_PERFORM_GET_GRAPHICS_METADATA 16
 
 // OEM specific HAL formats
 #define HAL_PIXEL_FORMAT_RGBA_5551 6
@@ -117,6 +136,7 @@ inline int roundUpToPageSize(int x) {
 #define HAL_PIXEL_FORMAT_YCrCb_420_SP_VENUS 0x114
 #define HAL_PIXEL_FORMAT_BGR_565 0x115
 #define HAL_PIXEL_FORMAT_RAW8 0x123
+#define HAL_PIXEL_FORMAT_NV12_HEIF 0x116
 
 // 10 bit
 #define HAL_PIXEL_FORMAT_ARGB_2101010 0x117
@@ -134,6 +154,11 @@ inline int roundUpToPageSize(int x) {
 #define HAL_PIXEL_FORMAT_BGR_888 0x121
 
 #define HAL_PIXEL_FORMAT_INTERLACE 0x180
+
+// Camera utils format
+#define HAL_PIXEL_FORMAT_NV12_LINEAR_FLEX  0x125
+#define HAL_PIXEL_FORMAT_NV12_UBWC_FLEX 0x126
+#define HAL_PIXEL_FORMAT_MULTIPLANAR_FLEX 0x127
 
 // v4l2_fourcc('Y', 'U', 'Y', 'L'). 24 bpp YUYV 4:2:2 10 bit per component
 #define HAL_PIXEL_FORMAT_YCbCr_422_I_10BIT 0x4C595559
@@ -197,5 +222,12 @@ enum {
 };
 
 enum { BUFFER_TYPE_UI = 0, BUFFER_TYPE_VIDEO };
+
+/* Flag to determine interlaced content
+ * Value maps to Flags presents in types.hal of QtiMapperextensions
+ */
+enum {
+  LAYOUT_INTERLACED_FLAG = 1 << 0,
+};
 
 #endif  // __GRALLOC_PRIV_H__

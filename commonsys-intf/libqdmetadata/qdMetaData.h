@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2018, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2019, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -37,6 +37,8 @@ extern "C" {
 #endif
 
 #define MAX_UBWC_STATS_LENGTH 32
+#define GRAPHICS_METADATA_SIZE 4096
+#define CVP_METADATA_SIZE 1024
 
 enum ColorSpace_t{
     ITU_R_601,
@@ -67,6 +69,8 @@ enum UBWC_Version {
     UBWC_UNUSED      = 0,
     UBWC_1_0         = 0x1,
     UBWC_2_0         = 0x2,
+    UBWC_3_0         = 0x3,
+    UBWC_4_0         = 0x4,
     UBWC_MAX_VERSION = 0xFF,
 };
 
@@ -96,6 +100,39 @@ struct S3DGpuComp_t {
     int32_t displayId; /* on which display S3D is composed by client */
     uint32_t s3dMode; /* the S3D format of this layer to be accessed by client */
 };
+
+typedef struct GraphicsMetadata {
+    uint32_t size;
+    uint32_t data[GRAPHICS_METADATA_SIZE];
+} GraphicsMetadata;
+
+#define VIDEO_HISTOGRAM_STATS_SIZE (4 * 1024)
+/* Frame type bit mask */
+#define QD_SYNC_FRAME (0x1 << 0)
+struct VideoHistogramMetadata {
+    uint32_t stats_info[1024]; /* video stats payload */
+    uint32_t stat_len; /* Payload size in bytes */
+    uint32_t frame_type; /* bit mask to indicate frame type */
+    uint32_t display_width;
+    uint32_t display_height;
+    uint32_t decode_width;
+    uint32_t decode_height;
+    uint32_t reserved[12];
+};
+
+typedef struct CVPMetadata {
+    uint32_t size; /* payload size in bytes */
+    uint8_t payload[CVP_METADATA_SIZE];
+    uint32_t capture_frame_rate;
+    /* Frame rate in Q16 format.
+            Eg: fps = 7.5, then
+            capture_frame_rate = 7 << 16 --> Upper 16 bits to represent 7
+            capture_frame_rate |= 5 -------> Lower 16 bits to represent 5
+
+       If size > 0, framerate is valid
+       If size = 0, invalid data, so ignore all parameters */
+    uint32_t cvp_frame_rate;
+} CVPMetadata;
 
 struct MetaData_t {
     int32_t operation;
@@ -137,42 +174,58 @@ struct MetaData_t {
     /* Set by camera to indicate that this buffer will be used for a High
      * Performance Video Usecase */
     uint32_t isVideoPerfMode;
+    /* Populated and used by adreno during buffer size calculation.
+     * Set only for RGB formats. */
+    GraphicsMetadata graphics_metadata;
+    /* Video hisogram stats populated by video decoder */
+    struct VideoHistogramMetadata video_histogram_stats;
+    /*
+     * Producer (camera) will set cvp metadata and consumer (video) will
+     * use it. The format of metadata is known to producer and consumer.
+     */
+    CVPMetadata cvpMetadata;
 };
 
 enum DispParamType {
-    SET_VT_TIMESTAMP         = 0x0001,
-    COLOR_METADATA           = 0x0002,
-    PP_PARAM_INTERLACED      = 0x0004,
-    SET_VIDEO_PERF_MODE      = 0x0008,
-    UNUSED3                  = 0x0010,
-    UNUSED4                  = 0x0020,
-    SET_UBWC_CR_STATS_INFO   = 0x0040,
-    UPDATE_BUFFER_GEOMETRY   = 0x0080,
-    UPDATE_REFRESH_RATE      = 0x0100,
-    UPDATE_COLOR_SPACE       = 0x0200,
-    MAP_SECURE_BUFFER        = 0x0400,
-    S3D_FORMAT               = 0x0800,
-    LINEAR_FORMAT            = 0x1000,
-    SET_IGC                  = 0x2000,
-    SET_SINGLE_BUFFER_MODE   = 0x4000,
-    SET_S3D_COMP             = 0x8000,
+    SET_VT_TIMESTAMP           = 0x0001,
+    COLOR_METADATA             = 0x0002,
+    PP_PARAM_INTERLACED        = 0x0004,
+    SET_VIDEO_PERF_MODE        = 0x0008,
+    SET_GRAPHICS_METADATA      = 0x0010,
+    SET_UNUSED                 = 0x0020,
+    SET_UBWC_CR_STATS_INFO     = 0x0040,
+    UPDATE_BUFFER_GEOMETRY     = 0x0080,
+    UPDATE_REFRESH_RATE        = 0x0100,
+    UPDATE_COLOR_SPACE         = 0x0200,
+    MAP_SECURE_BUFFER          = 0x0400,
+    S3D_FORMAT                 = 0x0800,
+    LINEAR_FORMAT              = 0x1000,
+    SET_IGC                    = 0x2000,
+    SET_SINGLE_BUFFER_MODE     = 0x4000,
+    SET_S3D_COMP               = 0x8000,
+    SET_CVP_METADATA           = 0x00010000,
+    SET_VIDEO_HISTOGRAM_STATS  = 0x00020000
 };
 
 enum DispFetchParamType {
-    GET_VT_TIMESTAMP         = 0x0001,
-    GET_COLOR_METADATA       = 0x0002,
-    GET_PP_PARAM_INTERLACED  = 0x0004,
-    GET_VIDEO_PERF_MODE      = 0x0008,
-    GET_UBWC_CR_STATS_INFO   = 0x0040,
-    GET_BUFFER_GEOMETRY      = 0x0080,
-    GET_REFRESH_RATE         = 0x0100,
-    GET_COLOR_SPACE          = 0x0200,
-    GET_MAP_SECURE_BUFFER    = 0x0400,
-    GET_S3D_FORMAT           = 0x0800,
-    GET_LINEAR_FORMAT        = 0x1000,
-    GET_IGC                  = 0x2000,
-    GET_SINGLE_BUFFER_MODE   = 0x4000,
-    GET_S3D_COMP             = 0x8000,
+    GET_VT_TIMESTAMP          = 0x0001,
+    GET_COLOR_METADATA        = 0x0002,
+    GET_PP_PARAM_INTERLACED   = 0x0004,
+    GET_VIDEO_PERF_MODE       = 0x0008,
+    GET_GRAPHICS_METADATA     = 0x0010,
+    GET_UNUSED                = 0X0020,
+    GET_UBWC_CR_STATS_INFO    = 0x0040,
+    GET_BUFFER_GEOMETRY       = 0x0080,
+    GET_REFRESH_RATE          = 0x0100,
+    GET_COLOR_SPACE           = 0x0200,
+    GET_MAP_SECURE_BUFFER     = 0x0400,
+    GET_S3D_FORMAT            = 0x0800,
+    GET_LINEAR_FORMAT         = 0x1000,
+    GET_IGC                   = 0x2000,
+    GET_SINGLE_BUFFER_MODE    = 0x4000,
+    GET_S3D_COMP              = 0x8000,
+    GET_CVP_METADATA          = 0x00010000,
+    GET_VIDEO_HISTOGRAM_STATS = 0x00020000
 };
 
 struct private_handle_t;
@@ -196,6 +249,14 @@ int clearMetaData(struct private_handle_t *handle, enum DispParamType paramType)
 int clearMetaDataVa(struct MetaData_t *data, enum DispParamType paramType);
 
 unsigned long getMetaDataSize();
+
+// Map, access metadata and unmap. Used by clients that do not import/free but
+//  clone and delete native_handle
+int setMetaDataAndUnmap(struct private_handle_t *handle, enum DispParamType paramType,
+                        void *param);
+int getMetaDataAndUnmap(struct private_handle_t *handle,
+                        enum DispFetchParamType paramType,
+                        void *param);
 
 #ifdef __cplusplus
 }
