@@ -1,5 +1,5 @@
 /*
-* Copyright (c) 2014-2018, The Linux Foundation. All rights reserved.
+* Copyright (c) 2014-2019, The Linux Foundation. All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without modification, are permitted
 * provided that the following conditions are met:
@@ -131,7 +131,10 @@ class DisplayBase : public DisplayInterface {
                                               LayerBufferFormat format,
                                               const ColorMetaData &color_metadata);
   virtual std::string Dump();
+  virtual DisplayError GetDisplayIdentificationData(uint8_t *out_port, uint32_t *out_data_size,
+                                                    uint8_t *out_data);
 
+  virtual bool CanSkipValidate();
  protected:
   DisplayError BuildLayerStackStats(LayerStack *layer_stack);
   virtual DisplayError ValidateGPUTargetParams();
@@ -161,6 +164,7 @@ class DisplayBase : public DisplayInterface {
   void ClearColorInfo();
   bool NeedsGpuFallback(const Layer *layer);
   bool NeedsHdrHandling();
+  void SetLutSwapFlag();
   void CopyColorTransformMatrix(const double *input_matrix) {
     for (uint32_t i = 0; i < kColorTransformlength_; i++) {
       color_transform_[i] = input_matrix[i];
@@ -218,6 +222,7 @@ class DisplayBase : public DisplayInterface {
   bool color_transform_active_ = false;
   bool gpu_fallback_ = false;
   HWQosData default_qos_data_;
+  bool lut_swap_ = false;
 };
 
 }  // namespace sdm

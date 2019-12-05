@@ -1,5 +1,5 @@
 /*
-* Copyright (c) 2014-2018, The Linux Foundation. All rights reserved.
+* Copyright (c) 2014-2019, The Linux Foundation. All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without modification, are permitted
 * provided that the following conditions are met:
@@ -356,6 +356,7 @@ DisplayError DisplayBase::Commit(LayerStack *layer_stack) {
   }
 
   PostCommitLayerParams(layer_stack);
+  SetLutSwapFlag();
 
   if (partial_update_control_) {
     comp_manager_->ControlPartialUpdate(display_comp_ctx_, true /* enable */);
@@ -370,6 +371,10 @@ DisplayError DisplayBase::Commit(LayerStack *layer_stack) {
   drop_hw_vsync_ = false;
   DLOGI_IF(kTagDisplay, "Exiting commit for display: %d-%d", display_id_, display_type_);
   return kErrorNone;
+}
+
+bool DisplayBase::CanSkipValidate() {
+  return !lut_swap_;
 }
 
 DisplayError DisplayBase::Flush(LayerStack *layer_stack) {
@@ -1420,7 +1425,8 @@ void DisplayBase::CommitLayerParams(LayerStack *layer_stack) {
   uint32_t hw_layers_count = UINT32(hw_layers_.info.hw_layers.size());
 
   for (uint32_t i = 0; i < hw_layers_count; i++) {
-    Layer *sdm_layer = layer_stack->layers.at(hw_layers_.info.index.at(i));
+    uint32_t sdm_layer_index = hw_layers_.info.index.at(i);
+    Layer *sdm_layer = layer_stack->layers.at(sdm_layer_index);
     Layer &hw_layer = hw_layers_.info.hw_layers.at(i);
 
     hw_layer.input_buffer.planes[0].fd = sdm_layer->input_buffer.planes[0].fd;
@@ -1429,6 +1435,17 @@ void DisplayBase::CommitLayerParams(LayerStack *layer_stack) {
     hw_layer.input_buffer.size = sdm_layer->input_buffer.size;
     hw_layer.input_buffer.acquire_fence_fd = sdm_layer->input_buffer.acquire_fence_fd;
     hw_layer.input_buffer.handle_id = sdm_layer->input_buffer.handle_id;
+    // TODO(user): Other FBT layer attributes like surface damage, dataspace, secure camera and
+    // secure display flags are also updated during SetClientTarget() called between validate and
+    // commit. Need to revist this and update it accordingly for FBT layer.
+    if (hw_layers_.info.gpu_target_index == sdm_layer_index) {
+      hw_layer.input_buffer.flags.secure = sdm_layer->input_buffer.flags.secure;
+      hw_layer.input_buffer.format = sdm_layer->input_buffer.format;
+      hw_layer.input_buffer.width = sdm_layer->input_buffer.width;
+      hw_layer.input_buffer.height = sdm_layer->input_buffer.height;
+      hw_layer.input_buffer.unaligned_width = sdm_layer->input_buffer.unaligned_width;
+      hw_layer.input_buffer.unaligned_height = sdm_layer->input_buffer.unaligned_height;
+    }
   }
 
   return;
@@ -1628,6 +1645,15 @@ DisplayError DisplayBase::ValidateHDR(LayerStack *layer_stack) {
   return kErrorNone;
 }
 
+DisplayError DisplayBase::GetDisplayIdentificationData(uint8_t *out_port, uint32_t *out_data_size,
+                                                       uint8_t *out_data) {
+  if (!out_port || !out_data_size) {
+    return kErrorParameters;
+  }
+
+  return hw_intf_->GetDisplayIdentificationData(out_port, out_data_size, out_data);
+}
+
 DisplayError DisplayBase::GetClientTargetSupport(uint32_t width, uint32_t height,
                                                  LayerBufferFormat format,
                                                  const ColorMetaData &color_metadata) {
@@ -1769,5 +1795,25 @@ bool DisplayBase::NeedsHdrHandling() {
     return false;
   }
   return true;
+}
+
+void DisplayBase::SetLutSwapFlag() {
+  uint32_t hw_layer_count = UINT32(hw_layers_.info.hw_layers.size());
+  for (uint32_t i = 0; i < hw_layer_count; i++) {
+    HWPipeInfo *left_pipe = &hw_layers_.config[i].left_pipe;
+    HWPipeInfo *right_pipe = &hw_layers_.config[i].right_pipe;
+    for (uint32_t count = 0; count < 2; count++) {
+      HWPipeInfo *pipe_info = (count == 0) ? left_pipe : right_pipe;
+      if (!pipe_info->valid || !pipe_info->scale_data.lut_flag.lut_swap) {
+        continue;
+      }
+      lut_swap_ = true;
+      return;
+    }
+  }
+
+  // No pipe needs lut swap.
+  lut_swap_ = false;
+  return;
 }
 }  // namespace sdm

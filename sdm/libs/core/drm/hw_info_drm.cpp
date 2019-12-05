@@ -1,5 +1,5 @@
 /*
-* Copyright (c) 2017 - 2018, The Linux Foundation. All rights reserved.
+* Copyright (c) 2017 - 2019, The Linux Foundation. All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
 * modification, are permitted provided that the following conditions are
@@ -437,7 +437,7 @@ void HWInfoDRM::GetWBInfo(HWResourceInfo *hw_resource) {
   hw_resource->supported_formats_map.erase(sub_blk_type);
   hw_resource->supported_formats_map.insert(make_pair(sub_blk_type, supported_sdm_formats));
 
-  drm_mgr_intf_->UnregisterDisplay(token);
+  drm_mgr_intf_->UnregisterDisplay(&token);
 }
 
 void HWInfoDRM::GetSDMFormat(uint32_t v4l2_format, LayerBufferFormat *sdm_format) {
@@ -552,12 +552,16 @@ DisplayError HWInfoDRM::GetHWRotatorInfo(HWResourceInfo *hw_resource) {
         while (Sys::getline_(caps_fs, caps)) {
           const string downscale_compression = "downscale_compression=";
           const string min_downscale = "min_downscale=";
+          const string max_line_width = "max_line_width=";
           if (caps.find(downscale_compression) != string::npos) {
             hw_resource->hw_rot_info.downscale_compression =
               std::stoi(string(caps, downscale_compression.length()));
           } else if (caps.find(min_downscale) != string::npos) {
             hw_resource->hw_rot_info.min_downscale =
               std::stof(string(caps, min_downscale.length()));
+          } else if (caps.find(max_line_width) != string::npos) {
+            hw_resource->hw_rot_info.max_line_width =
+              std::stoul(string(caps, max_line_width.length()));
           }
         }
       }
@@ -567,9 +571,10 @@ DisplayError HWInfoDRM::GetHWRotatorInfo(HWResourceInfo *hw_resource) {
     }
   }
 
-  DLOGI("V4L2 Rotator: Count = %d, Downscale = %d, Min_downscale = %f, Downscale_compression = %d",
-        hw_resource->hw_rot_info.num_rotator, hw_resource->hw_rot_info.has_downscale,
-        hw_resource->hw_rot_info.min_downscale, hw_resource->hw_rot_info.downscale_compression);
+  DLOGI("V4L2 Rotator: Count = %d, Downscale = %d, Min_downscale = %f," \
+        "Downscale_compression = %d, Max_line_width = %d", hw_resource->hw_rot_info.num_rotator,
+        hw_resource->hw_rot_info.has_downscale, hw_resource->hw_rot_info.min_downscale,
+        hw_resource->hw_rot_info.downscale_compression, hw_resource->hw_rot_info.max_line_width);
 
   return kErrorNone;
 }
@@ -711,11 +716,13 @@ DisplayError HWInfoDRM::GetDisplaysStatus(HWDisplaysInfo *hw_displays_info) {
       }
       hw_info.is_connected = iter.second.is_connected;
       hw_info.is_primary = iter.second.is_primary;
+      hw_info.is_wb_ubwc_supported = iter.second.is_wb_ubwc_supported;
       if (hw_info.display_id >= 0) {
         (*hw_displays_info)[hw_info.display_id] = hw_info;
       }
-      DLOGI("display: %d-%d, connected: %s, primary: %s", hw_info.display_id, hw_info.display_type,
-            hw_info.is_connected? "true": "false", hw_info.is_primary? "true": "false");
+      DLOGI("display: %d-%d, connected: %s, primary: %s wb_ubwc: %s", hw_info.display_id,
+            hw_info.display_type, hw_info.is_connected? "true": "false",
+            hw_info.is_primary? "true": "false", hw_info.is_wb_ubwc_supported? "true": "false");
     }
   } else {
     DLOGE("DRM Driver error %d while getting displays' status!", drm_err);

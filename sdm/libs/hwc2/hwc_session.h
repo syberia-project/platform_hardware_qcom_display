@@ -178,8 +178,22 @@ class HWCSession : hwc2_device_t, HWCUEventListener, IDisplayConfig, public qCli
                                  uint32_t *out_num_types, uint32_t *out_num_requests);
   static int32_t SetColorMode(hwc2_device_t *device, hwc2_display_t display,
                               int32_t /*android_color_mode_t*/ int_mode);
+  static int32_t SetColorModeWithRenderIntent(hwc2_device_t *device, hwc2_display_t display,
+                                                 int32_t /*ColorMode*/ int_mode,
+                                                 int32_t /*RenderIntent*/ int_render_intent);
+
   static int32_t SetColorTransform(hwc2_device_t *device, hwc2_display_t display,
                                    const float *matrix, int32_t /*android_color_transform_t*/ hint);
+  static int32_t GetDisplayIdentificationData(hwc2_device_t *device, hwc2_display_t display,
+                                              uint8_t *outPort, uint32_t *outDataSize,
+                                              uint8_t *outData);
+  static int32_t GetRenderIntents(hwc2_device_t *device, hwc2_display_t display,
+                                int32_t /*ColorMode*/ int_mode, uint32_t *out_num_intents,
+                                int32_t /*RenderIntent*/ *int_out_intents);
+  static int32_t GetDisplayCapabilities(hwc2_device_t *device, hwc2_display_t display,
+                                        uint32_t *outNumCapabilities, uint32_t *outCapabilities);
+  static int32_t GetDisplayBrightnessSupport(hwc2_device_t *device, hwc2_display_t display,
+                                             bool *outSupport);
   static int32_t SetVsyncEnabled(hwc2_device_t *device, hwc2_display_t display,
                                  int32_t int_enabled);
   static int32_t GetDozeSupport(hwc2_device_t *device, hwc2_display_t display,
@@ -214,7 +228,7 @@ class HWCSession : hwc2_device_t, HWCUEventListener, IDisplayConfig, public qCli
   // Uevent handler
   virtual void UEventHandler(const char *uevent_data, int length);
   void ResetPanel();
-  void InitDisplaySlots();
+  void InitSupportedDisplaySlots();
   int GetDisplayIndex(int dpy);
   int CreatePrimaryDisplay();
   void CreateNullDisplay();
@@ -235,6 +249,8 @@ class HWCSession : hwc2_device_t, HWCUEventListener, IDisplayConfig, public qCli
   int32_t GetPanelBrightness(int *level);
   int32_t MinHdcpEncryptionLevelChanged(int disp_id, uint32_t min_enc_level);
   int32_t SetDynamicDSIClock(int64_t disp_id, uint32_t bitrate);
+  int32_t IsWbUbwcSupported(int *value);
+  bool HasHDRSupport(HWCDisplay *hwc_display);
 
   // service methods
   void StartServices();
@@ -330,15 +346,16 @@ class HWCSession : hwc2_device_t, HWCUEventListener, IDisplayConfig, public qCli
 
   void Refresh(hwc2_display_t display);
   void HotPlug(hwc2_display_t display, HWC2::Connection state);
-  void UpdateVsyncSource();
   void HandleConcurrency(hwc2_display_t disp);
   void ActivateDisplay(hwc2_display_t disp, bool enable);
   void NonBuiltinConcurrency(hwc2_display_t disp, bool is_built_in_2_on);
-  void MapBuiltInDisplays();
+  void HandleBuiltInDisplays();
   void HandlePendingRefresh();
   bool GetSecondBuiltinStatus();
   hwc2_display_t GetNextBuiltinIndex();
-  hwc2_display_t GetNextVsyncSource();
+  HWC2::Error ValidateDisplayInternal(hwc2_display_t display, uint32_t *out_num_types,
+                                      uint32_t *out_num_requests);
+  HWC2::Error PresentDisplayInternal(hwc2_display_t display, int32_t *out_retire_fence);
 
   CoreInterface *core_intf_ = nullptr;
   HWCDisplay *hwc_display_[HWCCallbacks::kNumDisplays] = {nullptr};
@@ -351,8 +368,7 @@ class HWCSession : hwc2_device_t, HWCUEventListener, IDisplayConfig, public qCli
   std::vector<DisplayMapInfo> map_info_builtin_;    // Builtin displays excluding primary
   std::vector<DisplayMapInfo> map_info_pluggable_;  // Pluggable displays excluding primary
   std::vector<DisplayMapInfo> map_info_virtual_;    // Virtual displays
-  bool update_vsync_on_power_off_ = false;
-  bool update_vsync_on_doze_ = false;
+  std::vector<bool> is_hdr_display_;    // info on HDR supported
   bool reset_panel_ = false;
   bool secure_display_active_ = false;
   bool primary_ready_ = false;

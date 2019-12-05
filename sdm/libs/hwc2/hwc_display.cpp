@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2018, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2019, The Linux Foundation. All rights reserved.
  * Not a Contribution.
  *
  * Copyright 2015 The Android Open Source Project
@@ -211,6 +211,8 @@ void HWCColorMode::PopulateColorModes() {
     return;
   }
 
+  // Client expects native color mode to be supported by default
+  PopulateTransform(HAL_COLOR_MODE_NATIVE, "native", "identity");
   DLOGV_IF(kTagClient, "Color Modes supported count = %d", color_mode_count);
 
   const std::string color_transform = "identity";
@@ -735,8 +737,6 @@ HWC2::Error HWCDisplay::SetVsyncEnabled(HWC2::Vsync enabled) {
     return HWC2::Error::BadDisplay;
   }
 
-  last_vsync_mode_ = enabled;
-
   return HWC2::Error::None;
 }
 
@@ -955,6 +955,29 @@ HWC2::Error HWCDisplay::GetDisplayType(int32_t *out_type) {
   return HWC2::Error::None;
 }
 
+HWC2::Error HWCDisplay::GetPerFrameMetadataKeys(uint32_t *out_num_keys,
+                                                PerFrameMetadataKey *out_keys) {
+  if (out_num_keys == nullptr) {
+    return HWC2::Error::BadParameter;
+  }
+  *out_num_keys = UINT32(PerFrameMetadataKey::MAX_FRAME_AVERAGE_LIGHT_LEVEL) + 1;
+  if (out_keys != nullptr) {
+    out_keys[0] = PerFrameMetadataKey::DISPLAY_RED_PRIMARY_X;
+    out_keys[1] = PerFrameMetadataKey::DISPLAY_RED_PRIMARY_Y;
+    out_keys[2] = PerFrameMetadataKey::DISPLAY_GREEN_PRIMARY_X;
+    out_keys[3] = PerFrameMetadataKey::DISPLAY_GREEN_PRIMARY_Y;
+    out_keys[4] = PerFrameMetadataKey::DISPLAY_BLUE_PRIMARY_X;
+    out_keys[5] = PerFrameMetadataKey::DISPLAY_BLUE_PRIMARY_Y;
+    out_keys[6] = PerFrameMetadataKey::WHITE_POINT_X;
+    out_keys[7] = PerFrameMetadataKey::WHITE_POINT_Y;
+    out_keys[8] = PerFrameMetadataKey::MAX_LUMINANCE;
+    out_keys[9] = PerFrameMetadataKey::MIN_LUMINANCE;
+    out_keys[10] = PerFrameMetadataKey::MAX_CONTENT_LIGHT_LEVEL;
+    out_keys[11] = PerFrameMetadataKey::MAX_FRAME_AVERAGE_LIGHT_LEVEL;
+  }
+  return HWC2::Error::None;
+}
+
 HWC2::Error HWCDisplay::GetActiveConfig(hwc2_config_t *out_config) {
   if (out_config == nullptr) {
     return HWC2::Error::BadDisplay;
@@ -1030,10 +1053,6 @@ HWC2::PowerMode HWCDisplay::GetLastPowerMode() {
   return last_power_mode_;
 }
 
-HWC2::Vsync HWCDisplay::GetLastVsyncMode() {
-  return last_vsync_mode_;
-}
-
 DisplayError HWCDisplay::VSync(const DisplayEventVSync &vsync) {
   callbacks_->Vsync(id_, vsync.timestamp);
   return kErrorNone;
@@ -1083,7 +1102,10 @@ DisplayError HWCDisplay::HandleEvent(DisplayEvent event) {
 HWC2::Error HWCDisplay::PrepareLayerStack(uint32_t *out_num_types, uint32_t *out_num_requests) {
   layer_changes_.clear();
   layer_requests_.clear();
+  has_client_composition_ = false;
+
   if (shutdown_pending_) {
+    validated_ = false;
     return HWC2::Error::BadDisplay;
   }
 
@@ -1102,10 +1124,9 @@ HWC2::Error HWCDisplay::PrepareLayerStack(uint32_t *out_num_types, uint32_t *out
         // To prevent surfaceflinger infinite wait, flush the previous frame during Commit()
         // so that previous buffer and fences are released, and override the error.
         flush_ = true;
-        return HWC2::Error::BadDisplay;
       }
-    } else {
-      validated_ = true;
+      validated_ = false;
+      return HWC2::Error::BadDisplay;
     }
   } else {
     // Skip is not set
@@ -1129,6 +1150,9 @@ HWC2::Error HWCDisplay::PrepareLayerStack(uint32_t *out_num_types, uint32_t *out
     // Set SDM composition to HWC2 type in HWCLayer
     hwc_layer->SetComposition(composition);
     HWC2::Composition device_composition  = hwc_layer->GetDeviceSelectedCompositionType();
+    if (device_composition == HWC2::Composition::Client) {
+      has_client_composition_ = true;
+    }
     // Update the changes list only if the requested composition is different from SDM comp type
     // TODO(user): Take Care of other comptypes(BLIT)
     if (requested_composition != device_composition) {
@@ -1136,17 +1160,15 @@ HWC2::Error HWCDisplay::PrepareLayerStack(uint32_t *out_num_types, uint32_t *out
     }
     hwc_layer->ResetValidation();
   }
+
   client_target_->ResetValidation();
   *out_num_types = UINT32(layer_changes_.size());
   *out_num_requests = UINT32(layer_requests_.size());
-  skip_validate_ = false;
   layer_stack_invalid_ = false;
+  validate_state_ = kNormalValidate;
+  validated_ = true;
 
-  if (*out_num_types > 0) {
-    return HWC2::Error::HasChanges;
-  }
-
-  return HWC2::Error::None;
+  return ((*out_num_types > 0) ? HWC2::Error::HasChanges : HWC2::Error::None);
 }
 
 HWC2::Error HWCDisplay::AcceptDisplayChanges() {
@@ -1294,10 +1316,6 @@ HWC2::Error HWCDisplay::CommitLayerStack(void) {
     return HWC2::Error::None;
   }
 
-  if (skip_validate_ && !CanSkipValidate()) {
-    validated_ = false;
-  }
-
   if (!validated_) {
     DLOGV_IF(kTagClient, "Display %d is not validated", id_);
     return HWC2::Error::NotValidated;
@@ -1347,7 +1365,7 @@ HWC2::Error HWCDisplay::CommitLayerStack(void) {
     }
   }
 
-  skip_validate_ = true;
+  validate_state_ = kSkipValidate;
   return HWC2::Error::None;
 }
 
@@ -1863,7 +1881,7 @@ HWC2::Error HWCDisplay::SetCursorPosition(hwc2_layer_t layer, int x, int y) {
   if (hwc_layer->GetDeviceSelectedCompositionType() != HWC2::Composition::Cursor) {
     return HWC2::Error::None;
   }
-  if (!skip_validate_ && validated_) {
+  if ((validate_state_ != kSkipValidate) && validated_) {
     // the device is currently in the middle of the validate/present sequence,
     // cannot set the Position(as per HWC2 spec)
     return HWC2::Error::NotValidated;
@@ -2176,8 +2194,7 @@ std::string HWCDisplay::Dump() {
 }
 
 bool HWCDisplay::CanSkipValidate() {
-  if (solid_fill_enable_) {
-    DLOGV_IF(kTagClient, "Solid fill is enabled. Returning false.");
+  if (!validated_ || solid_fill_enable_) {
     return false;
   }
 
@@ -2208,7 +2225,23 @@ bool HWCDisplay::CanSkipValidate() {
     }
   }
 
+  if (!display_intf_->CanSkipValidate()) {
+    DLOGV_IF(kTagClient, "Display needs validation %d", id_);
+    return false;
+  }
+
   return true;
+}
+
+HWC2::Error HWCDisplay::GetDisplayIdentificationData(uint8_t *out_port, uint32_t *out_data_size,
+                                                     uint8_t *out_data) {
+  DisplayError ret = display_intf_->GetDisplayIdentificationData(out_port, out_data_size, out_data);
+  if (ret != kErrorNone) {
+    DLOGE("Failed due to SDM/Driver (err = %d, disp id = %" PRIu64
+          " %d-%d", ret, id_, sdm_id_, type_);
+  }
+
+  return HWC2::Error::None;
 }
 
 void HWCDisplay::UpdateRefreshRate() {
@@ -2252,6 +2285,14 @@ void HWCDisplay::WaitOnPreviousFence() {
       return;
     }
   }
+}
+
+HWC2::Error HWCDisplay::GetValidateDisplayOutput(uint32_t *out_num_types,
+                                                 uint32_t *out_num_requests) {
+  *out_num_types = UINT32(layer_changes_.size());
+  *out_num_requests = UINT32(layer_requests_.size());
+
+  return ((*out_num_types > 0) ? HWC2::Error::HasChanges : HWC2::Error::None);
 }
 
 }  // namespace sdm

@@ -1,5 +1,5 @@
 /*
-* Copyright (c) 2017-2018, The Linux Foundation. All rights reserved.
+* Copyright (c) 2017-2019, The Linux Foundation. All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
 * modification, are permitted provided that the following conditions are
@@ -95,7 +95,6 @@ using sde_drm::DRMBlendType;
 using sde_drm::DRMSrcConfig;
 using sde_drm::DRMOps;
 using sde_drm::DRMTopology;
-using sde_drm::DRMPowerMode;
 using sde_drm::DRMSecureMode;
 using sde_drm::DRMSecurityLevel;
 using sde_drm::DRMCscType;
@@ -224,7 +223,9 @@ static void GetDRMFormat(LayerBufferFormat format, uint32_t *drm_format,
 
 class FrameBufferObject : public LayerBufferObject {
  public:
-  FrameBufferObject(uint32_t fb_id) : fb_id_(fb_id) {
+  FrameBufferObject(uint32_t fb_id, LayerBufferFormat format,
+                             uint32_t width, uint32_t height)
+    :fb_id_(fb_id), format_(format), width_(width), height_(height) {
   }
 
   ~FrameBufferObject() {
@@ -236,9 +237,15 @@ class FrameBufferObject : public LayerBufferObject {
     }
   };
   uint32_t GetFbId() { return fb_id_; }
+  bool IsEqual(LayerBufferFormat format, uint32_t width, uint32_t height) {
+    return (format == format_ && width == width_ && height == height_);
+  }
 
  private:
   uint32_t fb_id_;
+  LayerBufferFormat format_;
+  uint32_t width_;
+  uint32_t height_;
 };
 
 HWDeviceDRM::Registry::Registry(BufferAllocator *buffer_allocator) :
@@ -306,10 +313,16 @@ void HWDeviceDRM::Registry::MapBufferToFbId(Layer* layer, LayerBuffer* buffer) {
     // In legacy path, clear fb_id map in each frame.
     layer->buffer_map->buffer_map.clear();
   } else {
-
-    if (layer->buffer_map->buffer_map.find(handle_id) != layer->buffer_map->buffer_map.end()) {
-      // Found fb_id for given handle_id key
-      return;
+    auto it = layer->buffer_map->buffer_map.find(handle_id);
+    if (it != layer->buffer_map->buffer_map.end()) {
+      FrameBufferObject *fb_obj = static_cast<FrameBufferObject*>(it->second.get());
+      if (fb_obj->IsEqual(buffer->format, buffer->width, buffer->height)) {
+        // Found fb_id for given handle_id key
+        return;
+      } else {
+        // Erase from fb_id map if format or size have been modified
+        layer->buffer_map->buffer_map.erase(it);
+      }
     }
 
     if (layer->buffer_map->buffer_map.size() >= fbid_cache_limit_) {
@@ -321,7 +334,8 @@ void HWDeviceDRM::Registry::MapBufferToFbId(Layer* layer, LayerBuffer* buffer) {
   uint32_t fb_id = 0;
   if (CreateFbId(buffer, &fb_id) >= 0) {
     // Create and cache the fb_id in map
-    layer->buffer_map->buffer_map[handle_id] = std::make_shared<FrameBufferObject>(fb_id);
+    layer->buffer_map->buffer_map[handle_id] = std::make_shared<FrameBufferObject>(fb_id,
+        buffer->format, buffer->width, buffer->height);
   }
 }
 
@@ -335,9 +349,14 @@ void HWDeviceDRM::Registry::MapOutputBufferToFbId(LayerBuffer *output_buffer) {
     // In legacy path, clear output buffer map in each frame.
     output_buffer_map_.clear();
   } else {
-
-    if (output_buffer_map_.find(handle_id) != output_buffer_map_.end()) {
-      return;
+    auto it = output_buffer_map_.find(handle_id);
+    if (it != output_buffer_map_.end()) {
+      FrameBufferObject *fb_obj = static_cast<FrameBufferObject*>(it->second.get());
+      if (fb_obj->IsEqual(output_buffer->format, output_buffer->width, output_buffer->height)) {
+        return;
+      } else {
+        output_buffer_map_.erase(it);
+      }
     }
 
     if (output_buffer_map_.size() >= UI_FBID_LIMIT) {
@@ -348,7 +367,8 @@ void HWDeviceDRM::Registry::MapOutputBufferToFbId(LayerBuffer *output_buffer) {
 
   uint32_t fb_id = 0;
   if (CreateFbId(output_buffer, &fb_id) >= 0) {
-    output_buffer_map_[handle_id] = std::make_shared<FrameBufferObject>(fb_id);
+    output_buffer_map_[handle_id] = std::make_shared<FrameBufferObject>(fb_id,
+        output_buffer->format, output_buffer->width, output_buffer->height);
   }
 }
 
@@ -440,7 +460,7 @@ DisplayError HWDeviceDRM::Deinit() {
   display_attributes_ = {};
   drm_mgr_intf_->DestroyAtomicReq(drm_atomic_intf_);
   drm_atomic_intf_ = {};
-  drm_mgr_intf_->UnregisterDisplay(token_);
+  drm_mgr_intf_->UnregisterDisplay(&token_);
   return err;
 }
 
@@ -636,6 +656,25 @@ void HWDeviceDRM::PopulateHWPanelInfo() {
   DLOGI("Dynamic Bit Clk Support = %d", hw_panel_info_.dyn_bitclk_support);
 }
 
+DisplayError HWDeviceDRM::GetDisplayIdentificationData(uint8_t *out_port, uint32_t *out_data_size,
+                                                       uint8_t *out_data) {
+  *out_port = token_.hw_port;
+  std::vector<uint8_t> &edid = connector_info_.edid;
+
+  if (out_data == nullptr) {
+    *out_data_size = (uint32_t)(edid.size());
+    if (*out_data_size == 0) {
+      DLOGE("EDID blob is empty, no data to return");
+      return kErrorDriverData;
+    }
+  } else {
+    *out_data_size = std::min(*out_data_size, (uint32_t)(edid.size()));
+    memcpy(out_data, edid.data(), *out_data_size);
+  }
+
+  return kErrorNone;
+}
+
 void HWDeviceDRM::GetHWDisplayPortAndMode() {
   hw_panel_info_.port = kPortDefault;
   hw_panel_info_.mode =
@@ -781,6 +820,7 @@ DisplayError HWDeviceDRM::PowerOn(const HWQosData &qos_data, int *release_fence)
   }
 
   if (first_cycle_) {
+    last_power_mode_ = DRMPowerMode::ON;
     return kErrorNone;
   }
 
@@ -796,6 +836,8 @@ DisplayError HWDeviceDRM::PowerOn(const HWQosData &qos_data, int *release_fence)
   drm_atomic_intf_->Perform(DRMOps::CRTC_GET_RELEASE_FENCE, token_.crtc_id, release_fence);
 
   pending_doze_ = false;
+  last_power_mode_ = DRMPowerMode::ON;
+
   return kErrorNone;
 }
 
@@ -817,14 +859,16 @@ DisplayError HWDeviceDRM::PowerOff() {
     return kErrorHardware;
   }
 
+  last_power_mode_ = DRMPowerMode::OFF;
   pending_doze_ = false;
+
   return kErrorNone;
 }
 
 DisplayError HWDeviceDRM::Doze(const HWQosData &qos_data, int *release_fence) {
   DTRACE_SCOPED();
 
-  if (!first_cycle_) {
+  if (first_cycle_ || last_power_mode_ != DRMPowerMode::OFF) {
     pending_doze_ = true;
     return kErrorNone;
   }
@@ -843,6 +887,8 @@ DisplayError HWDeviceDRM::Doze(const HWQosData &qos_data, int *release_fence) {
   }
 
   drm_atomic_intf_->Perform(DRMOps::CRTC_GET_RELEASE_FENCE, token_.crtc_id, release_fence);
+
+  last_power_mode_ = DRMPowerMode::DOZE;
 
   return kErrorNone;
 }
@@ -869,6 +915,8 @@ DisplayError HWDeviceDRM::DozeSuspend(const HWQosData &qos_data, int *release_fe
   drm_atomic_intf_->Perform(DRMOps::CRTC_GET_RELEASE_FENCE, token_.crtc_id, release_fence);
 
   pending_doze_ = false;
+  last_power_mode_ = DRMPowerMode::DOZE_SUSPEND;
+
   return kErrorNone;
 }
 

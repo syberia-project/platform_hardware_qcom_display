@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2016,2018, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2016,2018,2019 The Linux Foundation. All rights reserved.
 
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -30,8 +30,9 @@
 #ifndef __GR_UTILS_H__
 #define __GR_UTILS_H__
 
-#include <android/hardware/graphics/common/1.0/types.h>
+#include <android/hardware/graphics/common/1.1/types.h>
 #include "gralloc_priv.h"
+#include "qdMetaData.h"
 
 #define SZ_2M 0x200000
 #define SZ_1M 0x100000
@@ -40,18 +41,25 @@
 #define SIZE_4K 4096
 #define SIZE_8K 4096
 
+#ifdef MASTER_SIDE_CP
+#define SECURE_ALIGN SZ_4K
+#else
+#define SECURE_ALIGN SZ_1M
+#endif
+
 #define INT(exp) static_cast<int>(exp)
 #define UINT(exp) static_cast<unsigned int>(exp)
 
-using android::hardware::graphics::common::V1_0::BufferUsage;
+using android::hardware::graphics::common::V1_1::BufferUsage;
 
 namespace gralloc {
 struct BufferInfo {
   BufferInfo(int w, int h, int f, uint64_t usage = 0)
-      : width(w), height(h), format(f), usage(usage) {}
+      : width(w), height(h), format(f), layer_count(1), usage(usage) {}
   int width;
   int height;
   int format;
+  int layer_count;
   uint64_t usage;
 };
 
@@ -60,7 +68,7 @@ inline Type1 ALIGN(Type1 x, Type2 align) {
   return (Type1)((x + (Type1)align - 1) & ~((Type1)align - 1));
 }
 
-bool IsYuvFormat(const private_handle_t *hnd);
+bool IsYuvFormat(int format);
 bool IsCompressedRGBFormat(int format);
 bool IsUncompressedRGBFormat(int format);
 uint32_t GetBppForUncompressedRGB(int format);
@@ -70,6 +78,8 @@ bool CpuCanWrite(uint64_t usage);
 unsigned int GetSize(const BufferInfo &d, unsigned int alignedw, unsigned int alignedh);
 void GetBufferSizeAndDimensions(const BufferInfo &d, unsigned int *size, unsigned int *alignedw,
                                 unsigned int *alignedh);
+void GetBufferSizeAndDimensions(const BufferInfo &d, unsigned int *size, unsigned int *alignedw,
+                                unsigned int *alignedh, GraphicsMetadata *graphics_metadata);
 void GetCustomDimensions(private_handle_t *hnd, int *stride, int *height);
 void GetColorSpaceFromMetadata(private_handle_t *hnd, int *color_space);
 void GetAlignedWidthAndHeight(const BufferInfo &d, unsigned int *aligned_w,
@@ -93,7 +103,15 @@ unsigned int GetUBwcSize(int width, int height, int format, unsigned int aligned
                          unsigned int alignedh);
 int GetBufferLayout(private_handle_t *hnd, uint32_t stride[4], uint32_t offset[4],
                     uint32_t *num_planes);
+uint32_t GetDataAlignment(int format, uint64_t usage);
 
+void GetGpuResourceSizeAndDimensions(const BufferInfo &info, unsigned int *size,
+                                     unsigned int *alignedw, unsigned int *alignedh,
+                                     GraphicsMetadata *graphics_metadata);
+bool CanUseAdrenoForSize(int buffer_type, uint64_t usage);
+bool GetAdrenoSizeAPIStatus();
+bool IsGPUFlagSupported(uint64_t usage);
+int GetBufferType(int inputFormat);
 }  // namespace gralloc
 
 #endif  // __GR_UTILS_H__
