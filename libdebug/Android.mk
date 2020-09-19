@@ -8,5 +8,6 @@ LOCAL_SHARED_LIBRARIES        := libdl
 LOCAL_CFLAGS                  := -DLOG_TAG=\"SDM\" -Wall -std=c++11 -Werror -fno-operator-names
 LOCAL_CLANG                   := true
 LOCAL_SRC_FILES               := debug_handler.cpp
+LOCAL_EXPORT_C_INCLUDE_DIRS := $(LOCAL_PATH)
 
 include $(BUILD_SHARED_LIBRARY)
