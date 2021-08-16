@@ -26,6 +26,7 @@ display_config_version := $(shell \
 common_flags := -Wno-missing-field-initializers
 common_flags += -Wconversion -Wall -Werror
 common_flags += -DUSE_GRALLOC1
+common_flags += -flto=thin -fwhole-program-vtables
 ifeq ($(TARGET_IS_HEADLESS), true)
     common_flags += -DTARGET_HEADLESS
     LOCAL_CLANG := false
