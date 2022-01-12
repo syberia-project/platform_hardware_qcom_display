@@ -26,6 +26,7 @@ LOCAL_SHARED_LIBRARIES        := libsdmcore libqservice libbinder libhardware li
                                  android.hardware.graphics.allocator@2.0 \
                                  android.hardware.graphics.composer@2.2 \
 
+LOCAL_SHARED_LIBRARIES        += libbinder_ndk android.hardware.power-V1-ndk_platform pixel-power-ext-V1-ndk_platform
 
 LOCAL_SRC_FILES               := hwc_session.cpp \
                                  hwc_session_services.cpp \
@@ -41,6 +42,7 @@ LOCAL_SRC_FILES               := hwc_session.cpp \
                                  hwc_layers.cpp \
                                  hwc_callbacks.cpp \
                                  cpuhint.cpp \
+                                 worker.cpp \
                                  hwc_tonemapper.cpp \
                                  display_null.cpp \
                                  hwc_socket_handler.cpp \
